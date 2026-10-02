@@ -1,0 +1,29 @@
+# Core (required)
+numpy>=1.26
+networkx>=3.2
+python-dotenv>=1.0
+
+# Local ML inference — free, runs on CPU, no API calls
+sentence-transformers>=3.0
+torch>=2.2
+
+# Orchestration
+langgraph>=0.2.0
+
+# Vector store (runs fully embedded on local disk; same client for Qdrant Cloud)
+qdrant-client>=1.9
+
+# Optional: cloud knowledge graph (Neo4j AuraDB free tier)
+neo4j>=5.20
+
+# Optional: free LLM for answer generation (Google Gemini / Groq)
+langchain-google-genai>=2.0.0
+langchain-groq>=0.1.9
+langchain-core>=0.2.0
+
+# Demo UI
+streamlit>=1.35
+graphviz>=0.20
+
+# Tests
+pytest>=8.0

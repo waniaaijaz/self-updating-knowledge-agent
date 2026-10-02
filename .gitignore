@@ -1,0 +1,13 @@
+# environment / secrets
+.env
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# generated at runtime by scripts/ingest.py — not source
+storage/*
+!storage/.gitkeep
