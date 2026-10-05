@@ -12,6 +12,14 @@ At query time, superseded chunks are excluded before ranking.
 Runs entirely locally with no signups required. Free cloud tiers (Qdrant
 Cloud, Neo4j AuraDB, Gemini) can be swapped in through env vars if you want.
 
+## Demo
+
+![Demo: ingest v1 and v2, knowledge graph, ask, review queue](demo/demo.gif)
+
+The demo uses fictional documents (`demo/docs/`). To regenerate it:
+`pip install -r demo/requirements-demo.txt && playwright install chromium`, then
+`python demo/record_demo.py && python demo/build_video.py`.
+
 ## Why
 
 A plain vector store ranks purely by similarity. If you load HR Policy v1

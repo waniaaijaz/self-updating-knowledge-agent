@@ -1,0 +1,51 @@
+1
+00:00:00,300 --> 00:00:02,300
+Start from an empty knowledge base
+
+2
+00:00:02,910 --> 00:00:04,410
+Ingest policy v1 (uploaded file)
+
+3
+00:00:07,810 --> 00:00:12,310
+v1: 8 clauses inserted, nothing to compare against
+
+4
+00:00:12,320 --> 00:00:13,820
+Ingest policy v2 as a new version
+
+5
+00:00:16,980 --> 00:00:22,480
+v2: 3 clauses superseded, 2 sent to review, 3 unchanged skipped
+
+6
+00:00:25,020 --> 00:00:31,020
+Knowledge graph: each v2 clause points to the v1 clause it supersedes (red)
+
+7
+00:00:31,060 --> 00:00:35,060
+Audit trail records the score for each decision
+
+8
+00:00:37,870 --> 00:00:39,370
+Ask about a superseded clause (password rotation)
+
+9
+00:00:39,420 --> 00:00:40,920
+Waiting for Gemini (57s, shortened in the video)
+
+10
+00:00:41,230 --> 00:00:46,230
+The LLM answers from active clauses only: 180 days
+
+11
+00:00:46,710 --> 00:00:51,710
+The superseded v1 clause (90 days) is filtered out before ranking
+
+12
+00:00:51,790 --> 00:00:57,290
+Review queue: ambiguous changes wait for a human; the old rule stays active
+
+13
+00:00:57,710 --> 00:01:01,710
+Approve or reject each item

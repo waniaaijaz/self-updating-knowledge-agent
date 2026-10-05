@@ -11,3 +11,9 @@ venv/
 # generated at runtime by scripts/ingest.py — not source
 storage/*
 !storage/.gitkeep
+
+# demo recording intermediates (the GIF and .srt are committed)
+demo/raw/
+demo/.storage/
+*.webm
+demo/demo.mp4

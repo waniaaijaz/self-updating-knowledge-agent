@@ -56,7 +56,7 @@ with st.sidebar:
         config.GEMINI_API_KEY = api_key_input
         kb.query_engine._llm = None  # Reset cached LLM
 
-    if config.GEMINI_API_KEY and not config.GEMINI_API_KEY.startswith("AIza"):
+    if config.GEMINI_API_KEY and not config.GEMINI_API_KEY.startswith(("AIza", "AQ.")):
         st.sidebar.caption("⚠️ *Key does not start with `AIzaSy...`. Get a free key at [Google AI Studio](https://aistudio.google.com/app/apikey)*")
 
 
@@ -200,27 +200,35 @@ with tab_graph:
             import graphviz
 
             dot = graphviz.Digraph()
-            dot.attr(rankdir="LR", bgcolor="transparent")
+            dot.attr(rankdir="TB", bgcolor="transparent", nodesep="0.25", ranksep="0.6")
+            dot.attr("node", fontname="Helvetica", fontsize="12", margin="0.06,0.04")
+            dot.attr("edge", fontname="Helvetica", fontsize="10")
+
+            # Chunk ids contain "::", which graphviz parses as a node:port
+            # separator in edges and emits invalid DOT. Use plain ids.
+            gid = {node["id"]: f"n{i}" for i, node in enumerate(nodes)}
 
             for node in nodes:
                 status = node.get("status", "ACTIVE")
                 dot.node(
-                    node["id"],
-                    f"{node.get('version','?')}\n{node.get('section_path','?')}\n[{status}]",
+                    gid[node["id"]],
+                    f"{node.get('version','?')} · {node.get('section_path','?')}\n{status.split('_')[0].title()}",
                     shape="box", style="filled",
                     fillcolor=STATUS_COLOR.get(status, "#e0e0e0"),
                     color=STATUS_BORDER.get(status, "#666666"),
                 )
 
             for edge in edges:
-                dot.edge(edge["source"], edge["target"],
+                if edge["source"] not in gid or edge["target"] not in gid:
+                    continue
+                dot.edge(gid[edge["source"]], gid[edge["target"]],
                          label=f"  {edge.get('nli_score', 0):.2f}", color="#c0392b")
 
             st.graphviz_chart(dot, use_container_width=True)
 
             legend = "  ".join(
-                f":{color_name}_square: {status.title()}"
-                for status, color_name in [("ACTIVE", "green"), ("SUPERSEDED", "red"), ("PENDING_REVIEW", "yellow")]
+                f"{icon} {status.replace('_', ' ').title()}"
+                for status, icon in [("ACTIVE", "🟩"), ("SUPERSEDED", "🟥"), ("PENDING_REVIEW", "🟨")]
             )
             st.caption(legend)
         except Exception as exc:  # noqa: BLE001
