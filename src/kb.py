@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import config
+from .access import DEFAULT_TENANT, UserContext, can_see
 from .agent import AgentRunner
+from .audit import AuditLog
 from .chunking import chunk_file, chunk_markdown
 from .embeddings import get_embedder
 from .graph_store import get_graph_store
@@ -23,11 +25,12 @@ class KnowledgeBase:
         self.vectors = get_vector_store(dim=self.embedder.dim)
         self.graph = get_graph_store()
         self.queue = ReviewQueue()
+        self.audit = AuditLog()
         self.services = Services(
             self.embedder, self.detector, self.vectors, self.graph, self.queue
         )
         self.agent = AgentRunner(self.services)
-        self.query_engine = QueryEngine(self.services)
+        self.query_engine = QueryEngine(self.services, audit=self.audit)
 
     # ---------------------------------------------------------------- info
     def backends(self) -> dict:
@@ -40,12 +43,18 @@ class KnowledgeBase:
         }
 
     # -------------------------------------------------------------- ingest
-    def ingest_markdown(self, text, doc_id, version, timestamp, verbose=True, force_reingest=False):
-        chunks = chunk_markdown(text, doc_id, version, timestamp)
+    # tenant_id / allowed_roles are the document defaults. A section can
+    # override the roles with a "<!-- roles: hr -->" line (see chunking.py).
+    def ingest_markdown(self, text, doc_id, version, timestamp, verbose=True, force_reingest=False,
+                        tenant_id=DEFAULT_TENANT, allowed_roles=None):
+        chunks = chunk_markdown(text, doc_id, version, timestamp,
+                                tenant_id=tenant_id, allowed_roles=allowed_roles)
         return self._ingest_chunks(chunks, verbose, force_reingest)
 
-    def ingest_file(self, path, doc_id, version, timestamp, verbose=True, force_reingest=False):
-        chunks = chunk_file(Path(path), doc_id, version, timestamp)
+    def ingest_file(self, path, doc_id, version, timestamp, verbose=True, force_reingest=False,
+                    tenant_id=DEFAULT_TENANT, allowed_roles=None):
+        chunks = chunk_file(Path(path), doc_id, version, timestamp,
+                            tenant_id=tenant_id, allowed_roles=allowed_roles)
         return self._ingest_chunks(chunks, verbose, force_reingest)
 
     def _ingest_chunks(self, chunks, verbose, force_reingest=False):
@@ -61,14 +70,26 @@ class KnowledgeBase:
         return {"chunks": len(chunks), "summary": summary, "log": logs}
 
     # --------------------------------------------------------------- query
-    def ask(self, question, top_k=5):
-        return self.query_engine.ask(question, top_k=top_k)
+    def ask(self, question, top_k=5, user: UserContext | None = None):
+        return self.query_engine.ask(question, top_k=top_k, user=user)
+
+    def visible_nodes(self, user: UserContext | None):
+        """Graph nodes this user may see, plus how many were hidden. For the UI."""
+        nodes = self.graph.nodes()
+        shown = [n for n in nodes if can_see(n, user)]
+        return shown, len(nodes) - len(shown)
+
+    def can_see_id(self, chunk_id, user: UserContext | None) -> bool:
+        node = self.graph.get(chunk_id)
+        # unknown id: say no rather than guess
+        return node is not None and can_see(node, user)
 
     # --------------------------------------------------------------- admin
     def reset(self):
         self.vectors.reset()
         self.graph.reset()
         self.queue.reset()
+        self.audit.reset()
         self.services._hashes = None
 
     def stats(self):

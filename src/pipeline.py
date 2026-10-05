@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import Any, TypedDict
 
 from . import config
+from .access import DEFAULT_TENANT
 from .chunking import Chunk
 from .freshness import STATUS_ACTIVE, STATUS_PENDING_REVIEW
 from .nli import CONTRADICTION  # noqa: F401
@@ -108,6 +109,9 @@ def retrieve_candidates(state: IngestState, svc: Services) -> IngestState:
         top_k=max(config.TOP_K_CANDIDATES * 4, 12),
         doc_id=chunk["doc_id"],
         exclude_id=chunk["id"],
+        # same doc_id in two tenants is two different documents, one tenant's
+        # upload must never supersede the other's. No-op for default access.
+        tenant_id=chunk.get("tenant_id") or DEFAULT_TENANT,
     )
     min_sim = getattr(svc.embedder, "min_candidate_sim", config.MIN_CANDIDATE_SIM)
     candidates = [

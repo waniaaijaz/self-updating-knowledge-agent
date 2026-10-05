@@ -3,6 +3,9 @@
 
     python scripts/ask.py "what is the home office stipend?"
     python scripts/ask.py --suite          # run the built-in demo questions
+    python scripts/ask.py --tenant acme --role employee "what are the salary bands?"
+
+Without --tenant/--role there is no permission filter (old behaviour).
 """
 
 import argparse
@@ -11,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.access import UserContext  # noqa: E402
 from src.kb import KnowledgeBase  # noqa: E402
 
 SUITE = [
@@ -24,8 +28,8 @@ SUITE = [
 ]
 
 
-def show(kb, question):
-    res = kb.ask(question)
+def show(kb, question, user=None):
+    res = kb.ask(question, user=user)
     print(f"\nQ: {question}")
     print(f"A: {res.answer}\n")
     print("  Context used:")
@@ -37,6 +41,8 @@ def show(kb, question):
         for rc in res.filtered_out[:6]:
             print(f"    - {rc.doc_id} {rc.version} {rc.breadcrumb}  "
                   f"sim={rc.similarity:.3f} status={rc.status}")
+    if res.blocked_ids:
+        print(f"  Hidden by permissions: {len(res.blocked_ids)} chunk(s)")
     print("-" * 78)
 
 
@@ -45,16 +51,22 @@ def main():
     ap.add_argument("question", nargs="?")
     ap.add_argument("--suite", action="store_true")
     ap.add_argument("--offline", action="store_true")
+    ap.add_argument("--tenant")
+    ap.add_argument("--role")
+    ap.add_argument("--user", default="cli")
     args = ap.parse_args()
+    if bool(args.tenant) != bool(args.role):
+        ap.error("--tenant and --role go together")
+    user = UserContext(args.tenant, args.role, args.user) if args.tenant else None
 
     kb = KnowledgeBase(offline=True if args.offline else None)
     print("Backends:", kb.backends())
 
     if args.suite:
         for q in SUITE:
-            show(kb, q)
+            show(kb, q, user)
     elif args.question:
-        show(kb, args.question)
+        show(kb, args.question, user)
     else:
         ap.error("give a question or use --suite")
 

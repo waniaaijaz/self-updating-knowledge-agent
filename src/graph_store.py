@@ -131,7 +131,11 @@ class Neo4jGraphStore(BaseGraphStore):
                   "FOR (c:Chunk) REQUIRE c.id IS UNIQUE")
 
     def add_chunk(self, chunk_dict, status=STATUS_ACTIVE):
-        props = {k: v for k, v in chunk_dict.items() if not isinstance(v, (dict, list))}
+        # string lists are fine in neo4j and allowed_roles must survive, or
+        # the UI would read a missing field as "visible to all"
+        props = {k: v for k, v in chunk_dict.items()
+                 if not isinstance(v, dict)
+                 and not (isinstance(v, list) and not all(isinstance(x, str) for x in v))}
         props["status"] = status
         props["ingested_at"] = _now()
         with self.driver.session() as s:

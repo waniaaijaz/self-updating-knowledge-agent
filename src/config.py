@@ -78,6 +78,7 @@ NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
 GRAPH_JSON_PATH = STORAGE_DIR / "graph.json"
 HITL_QUEUE_PATH = STORAGE_DIR / "hitl_queue.json"
+AUDIT_LOG_PATH = STORAGE_DIR / "audit_log.jsonl"
 
 # ---------------------------------------------------------------- LLM
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")

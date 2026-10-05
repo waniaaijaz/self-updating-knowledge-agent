@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import config
+from .access import ALL_ROLES, DEFAULT_TENANT, chunk_roles, chunk_tenant
 from .chunking import Chunk
 
 
@@ -38,7 +39,12 @@ class BaseVectorStore:
     backend = "base"
 
     def upsert(self, chunks: list[Chunk], vectors: np.ndarray) -> None: ...
-    def search(self, vector: np.ndarray, top_k: int, doc_id: str | None = None, exclude_id: str | None = None) -> list[SearchHit]: ...
+    # tenant_id / role are the permission filter. They are applied inside the
+    # search, so hidden chunks never come back from the store at all.
+    def search(self, vector: np.ndarray, top_k: int, doc_id: str | None = None, exclude_id: str | None = None,
+               tenant_id: str | None = None, role: str | None = None) -> list[SearchHit]: ...
+    # ids only (no text), for the audit log's "blocked by permissions" list
+    def search_ids(self, vector: np.ndarray, top_k: int) -> list[str]: ...
     def set_payload(self, chunk_id: str, updates: dict) -> None: ...
     def all_payloads(self) -> list[dict]: ...
     def reset(self) -> None: ...
@@ -83,20 +89,32 @@ class NumpyVectorStore(BaseVectorStore):
             self.matrix = vec[None, :] if self.matrix is None else np.vstack([self.matrix, vec[None, :]])
         self._save()
 
-    def search(self, vector, top_k, doc_id=None, exclude_id=None):
-        if self.matrix is None or not self.ids:
-            return []
+    def _ranked(self, vector):
         vector = np.asarray(vector, dtype=np.float32)
         norms = np.linalg.norm(self.matrix, axis=1) * np.linalg.norm(vector)
         norms[norms == 0] = 1e-9
         sims = (self.matrix @ vector) / norms
+        return sims, np.argsort(-sims)
+
+    def search(self, vector, top_k, doc_id=None, exclude_id=None, tenant_id=None, role=None):
+        if self.matrix is None or not self.ids:
+            return []
+        sims, order = self._ranked(vector)
 
         hits = []
-        for idx in np.argsort(-sims):
+        for idx in order:
             cid = self.ids[idx]
             payload = self.payloads[cid]
             if doc_id is not None and payload["doc_id"] != doc_id:
                 continue
+            # checked before the hit is appended, so a hidden chunk can't
+            # take a top_k slot or reach the caller
+            if tenant_id is not None and chunk_tenant(payload) != tenant_id:
+                continue
+            if role is not None:
+                roles = chunk_roles(payload)
+                if ALL_ROLES not in roles and role.lower() not in roles:
+                    continue
             # Exclude the literal chunk being compared against itself, not
             # every chunk that happens to share its version label. Two
             # different document revisions can legitimately carry the same
@@ -109,6 +127,12 @@ class NumpyVectorStore(BaseVectorStore):
             if len(hits) >= top_k:
                 break
         return hits
+
+    def search_ids(self, vector, top_k):
+        if self.matrix is None or not self.ids:
+            return []
+        _, order = self._ranked(vector)
+        return [self.ids[i] for i in order[:top_k]]
 
     def set_payload(self, chunk_id, updates):
         if chunk_id in self.payloads:
@@ -156,7 +180,7 @@ class QdrantVectorStore(BaseVectorStore):
         ]
         self.client.upsert(collection_name=self.collection, points=points)
 
-    def search(self, vector, top_k, doc_id=None, exclude_id=None):
+    def search(self, vector, top_k, doc_id=None, exclude_id=None, tenant_id=None, role=None):
         from qdrant_client.models import FieldCondition, Filter, MatchValue
 
         must, must_not = [], []
@@ -166,6 +190,7 @@ class QdrantVectorStore(BaseVectorStore):
             # Exclude the literal chunk itself, not everything sharing its
             # version label — see NumpyVectorStore.search for why.
             must_not.append(FieldCondition(key="id", match=MatchValue(value=exclude_id)))
+        must.extend(_access_conditions(tenant_id, role))
         flt = Filter(must=must or None, must_not=must_not or None) if (must or must_not) else None
 
         res = self.client.query_points(
@@ -176,6 +201,15 @@ class QdrantVectorStore(BaseVectorStore):
             with_payload=True,
         ).points
         return [SearchHit(p.payload["id"], float(p.score), p.payload) for p in res]
+
+    def search_ids(self, vector, top_k):
+        res = self.client.query_points(
+            collection_name=self.collection,
+            query=np.asarray(vector, dtype=np.float32).tolist(),
+            limit=top_k,
+            with_payload=["id"],
+        ).points
+        return [p.payload["id"] for p in res]
 
     def set_payload(self, chunk_id, updates):
         self.client.set_payload(
@@ -218,6 +252,32 @@ class QdrantVectorStore(BaseVectorStore):
                 self.client.close()
             except Exception:
                 pass
+
+
+def _access_conditions(tenant_id, role) -> list:
+    """Qdrant version of the tenant/role check in NumpyVectorStore.search."""
+    from qdrant_client.models import (
+        FieldCondition, Filter, IsEmptyCondition, MatchAny, MatchValue, PayloadField,
+    )
+
+    out = []
+    if tenant_id is not None:
+        same_tenant = FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id))
+        if tenant_id == DEFAULT_TENANT:
+            # chunks stored before tenants existed have no tenant_id at all
+            out.append(Filter(should=[same_tenant,
+                                      IsEmptyCondition(is_empty=PayloadField(key="tenant_id"))]))
+        else:
+            out.append(same_tenant)
+    if role is not None:
+        # MatchAny on a list field = "any element of allowed_roles is in here".
+        # is_empty covers old chunks with no allowed_roles (= visible to all);
+        # an explicit [] can't be stored, normalize_roles refuses it.
+        out.append(Filter(should=[
+            FieldCondition(key="allowed_roles", match=MatchAny(any=[role.lower(), ALL_ROLES])),
+            IsEmptyCondition(is_empty=PayloadField(key="allowed_roles")),
+        ]))
+    return out
 
 
 def get_vector_store(dim: int) -> BaseVectorStore:
